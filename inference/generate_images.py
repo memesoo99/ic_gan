@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
+# python inference/generate_images.py --root_path /home/genniferk/prior_test/ic_gan/cc_icgan_biggan_imagenet_res256 --model cc_icgan --model_backbone biggan --resolution 256
 
 import os
 import sys
@@ -18,6 +19,7 @@ import data_utils.utils as data_utils
 import inference.utils as inference_utils
 import BigGAN_PyTorch.utils as biggan_utils
 from data_utils.datasets_common import pil_loader
+from PIL import Image
 import torchvision.transforms as transforms
 import time
 
@@ -60,61 +62,59 @@ def get_model(exp_name, root_path, backbone, device="cuda"):
     config = biggan_utils.update_config_roots(config, change_weight_folder=False)
     generator, config = inference_utils.load_model_inference(config, device=device)
     biggan_utils.count_parameters(generator)
-    generator.eval()
+    generator.train()
 
     return generator
 
+def get_conditionings(generator, root_path, label_int, image_path, index=None):
+    if "cc" in root_path:
+        model = "cc_icgan"
+    else:
+        model = "icgan"
 
-def get_conditionings(test_config, generator, data):
+    data, transform_list = get_data(
+        root_path,
+        model,
+        256,
+        "imagenet",
+        False,
+    )
+
     # Obtain noise vectors
     z = torch.empty(
-        test_config["num_imgs_gen"] * test_config["num_conditionings_gen"],
-        generator.z_dim if config["model_backbone"] == "stylegan2" else generator.dim_z,
-    ).normal_(mean=0, std=test_config["z_var"])
+        1 * 1, generator.dim_z,
+    ).normal_(mean=0, std=1.0)
 
     # Subsampling some instances from the 1000 k-means centers file
-    if test_config["num_conditionings_gen"] > 1:
-        total_idxs = np.random.choice(
-            range(1000), test_config["num_conditionings_gen"], replace=False
-        )
+    # if test_config["num_conditionings_gen"] > 1:
+    #     total_idxs = np.random.choice(
+    #         range(1000), test_config["num_conditionings_gen"], replace=False
+    #     )
 
     # Obtain features, labels and ground truth image paths
     all_feats, all_img_paths, all_labels = [], [], []
-    for counter in range(test_config["num_conditionings_gen"]):
+    for counter in range(1):
         # Index in 1000 k-means centers file
-        if test_config["index"] is not None:
-            idx = test_config["index"]
-        else:
-            idx = total_idxs[counter]
+        idx = index
         # Image paths to visualize ground-truth instance
-        if test_config["visualize_instance_images"]:
-            all_img_paths.append(data["image_path"][idx])
+        # if test_config["visualize_instance_images"]:
+        all_img_paths.append(data["image_path"][idx])
         # Instance features
         all_feats.append(
             torch.FloatTensor(data["instance_features"][idx : idx + 1]).repeat(
-                test_config["num_imgs_gen"], 1
+                1, 1
             )
         )
         # Obtain labels
-        if test_config["swap_target"] is not None:
-            # Swap label for a manually specified one
-            label_int = test_config["swap_target"]
-        else:
-            # Use the label associated to the instance feature
-            label_int = int(data["labels"][idx])
-        # Format labels according to the backbone
+        label_int = label_int
+        
         labels = None
-        if test_config["model_backbone"] == "stylegan2":
-            dim_labels = 1000
-            labels = torch.eye(dim_labels)[torch.LongTensor([label_int])].repeat(
-                test_config["num_imgs_gen"], 1
+        
+        labels = torch.LongTensor([label_int]).repeat(
+            1
             )
-        else:
-            if test_config["model"] == "cc_icgan":
-                labels = torch.LongTensor([label_int]).repeat(
-                    test_config["num_imgs_gen"]
-                )
         all_labels.append(labels)
+
     # Concatenate all conditionings
     all_feats = torch.cat(all_feats)
     if all_labels[0] is not None:
@@ -122,6 +122,64 @@ def get_conditionings(test_config, generator, data):
     else:
         all_labels = None
     return z, all_feats, all_labels, all_img_paths
+
+# def get_conditionings(test_config, generator, data):
+#     # Obtain noise vectors
+#     z = torch.empty(
+#         test_config["num_imgs_gen"] * test_config["num_conditionings_gen"],
+#         generator.z_dim if test_config["model_backbone"] == "stylegan2" else generator.dim_z,
+#     ).normal_(mean=0, std=test_config["z_var"])
+
+#     # Subsampling some instances from the 1000 k-means centers file
+#     if test_config["num_conditionings_gen"] > 1:
+#         total_idxs = np.random.choice(
+#             range(1000), test_config["num_conditionings_gen"], replace=False
+#         )
+
+#     # Obtain features, labels and ground truth image paths
+#     all_feats, all_img_paths, all_labels = [], [], []
+#     for counter in range(test_config["num_conditionings_gen"]):
+#         # Index in 1000 k-means centers file
+#         if test_config["index"] is not None:
+#             idx = test_config["index"]
+#         else:
+#             idx = total_idxs[counter]
+#         # Image paths to visualize ground-truth instance
+#         if test_config["visualize_instance_images"]:
+#             all_img_paths.append(data["image_path"][idx])
+#         # Instance features
+#         all_feats.append(
+#             torch.FloatTensor(data["instance_features"][idx : idx + 1]).repeat(
+#                 test_config["num_imgs_gen"], 1
+#             )
+#         )
+#         # Obtain labels
+#         if test_config["swap_target"] is not None:
+#             # Swap label for a manually specified one
+#             label_int = test_config["swap_target"]
+#         else:
+#             # Use the label associated to the instance feature
+#             label_int = int(data["labels"][idx])
+#         # Format labels according to the backbone
+#         labels = None
+#         if test_config["model_backbone"] == "stylegan2":
+#             dim_labels = 1000
+#             labels = torch.eye(dim_labels)[torch.LongTensor([label_int])].repeat(
+#                 test_config["num_imgs_gen"], 1
+#             )
+#         else:
+#             if test_config["model"] == "cc_icgan":
+#                 labels = torch.LongTensor([label_int]).repeat(
+#                     test_config["num_imgs_gen"]
+#                 )
+#         all_labels.append(labels)
+#     # Concatenate all conditionings
+#     all_feats = torch.cat(all_feats)
+#     if all_labels[0] is not None:
+#         all_labels = torch.cat(all_labels)
+#     else:
+#         all_labels = None
+#     return z, all_feats, all_labels, all_img_paths
 
 
 def main(test_config):
@@ -138,7 +196,7 @@ def main(test_config):
         test_config["resolution"],
         suffix,
     )
-    device = "cuda"
+    device = test_config["device"]
     ### -- Data -- ###
     data, transform_list = get_data(
         test_config["root_path"],
@@ -152,14 +210,14 @@ def main(test_config):
     generator = get_model(
         exp_name, test_config["root_path"], test_config["model_backbone"], device=device
     )
-
+    
     ### -- Generate images -- ###
     # Prepare input and conditioning: different noise vector per sample but the same conditioning
     # Sample noise vector
     z, all_feats, all_labels, all_img_paths = get_conditionings(
         test_config, generator, data
     )
-
+    return generator, z, all_feats, all_labels
     ## Generate the images
     all_generated_images = []
     with torch.no_grad():
@@ -176,6 +234,10 @@ def main(test_config):
             gen_img = generator(
                 z[start:end].to(device), labels_, all_feats[start:end].to(device)
             )
+            # from PIL import Image
+            # gen_img = ((gen_img * 0.5 + 0.5) * 255).int().cpu().permute(0, 2, 3, 1).numpy()
+            # img = Image.fromarray(gen_img[0], 'RGB')
+            # img.save('my.png')
             if test_config["model_backbone"] == "biggan":
                 gen_img = ((gen_img * 0.5 + 0.5) * 255).int()
             elif test_config["model_backbone"] == "stylegan2":
@@ -183,35 +245,36 @@ def main(test_config):
             all_generated_images.append(gen_img.cpu())
     all_generated_images = torch.cat(all_generated_images)
     all_generated_images = all_generated_images.permute(0, 2, 3, 1).numpy()
-
-    big_plot = []
-    for i in range(0, test_config["num_conditionings_gen"]):
-        row = []
-        for j in range(0, test_config["num_imgs_gen"]):
-            subplot_idx = (i * test_config["num_imgs_gen"]) + j
-            row.append(all_generated_images[subplot_idx])
-        row = np.concatenate(row, axis=1)
-        big_plot.append(row)
-    big_plot = np.concatenate(big_plot, axis=0)
+    # all_generated_images = all_generated_images.numpy()
+    big_plot = all_generated_images[0]
+    # big_plot = []
+    # for i in range(0, test_config["num_conditionings_gen"]):
+    #     row = []
+    #     for j in range(0, test_config["num_imgs_gen"]):
+    #         subplot_idx = (i * test_config["num_imgs_gen"]) + j
+    #         row.append(all_generated_images[subplot_idx])
+    #     row = np.concatenate(row, axis=1)
+    #     big_plot.append(row)
+    # big_plot = np.concatenate(big_plot, axis=0)
 
     # (Optional) Show ImageNet ground-truth conditioning instances
-    if test_config["visualize_instance_images"]:
-        all_gt_imgs = []
-        for i in range(0, len(all_img_paths)):
-            all_gt_imgs.append(
-                np.array(
-                    transform_list(
-                        pil_loader(
-                            os.path.join(test_config["dataset_path"], all_img_paths[i])
-                        )
-                    )
-                ).astype(np.uint8)
-            )
-        all_gt_imgs = np.concatenate(all_gt_imgs, axis=0)
-        white_space = (
-            np.ones((all_gt_imgs.shape[0], 20, all_gt_imgs.shape[2])) * 255
-        ).astype(np.uint8)
-        big_plot = np.concatenate([all_gt_imgs, white_space, big_plot], axis=1)
+    # if test_config["visualize_instance_images"]:
+    #     all_gt_imgs = []
+    #     for i in range(0, len(all_img_paths)):
+    #         all_gt_imgs.append(
+    #             np.array(
+    #                 transform_list(
+    #                     pil_loader(
+    #                         os.path.join(test_config["dataset_path"], all_img_paths[i])
+    #                     )
+    #                 )
+    #             ).astype(np.uint8)
+    #         )
+    #     all_gt_imgs = np.concatenate(all_gt_imgs, axis=0)
+    #     white_space = (
+    #         np.ones((all_gt_imgs.shape[0], 20, all_gt_imgs.shape[2])) * 255
+    #     ).astype(np.uint8)
+    #     big_plot = np.concatenate([all_gt_imgs, white_space, big_plot], axis=1)
 
     plt.figure(
         figsize=(
@@ -236,6 +299,130 @@ def main(test_config):
     plt.savefig(fig_path, dpi=600, bbox_inches="tight", pad_inches=0)
 
     print("Done! Figure saved as %s" % (fig_path))
+
+def call_icgan(device):
+    parser = ArgumentParser(
+        description="Generate and save images using pre-trained models"
+    )
+
+    parser.add_argument(
+        "--root_path",
+        type=str,
+        default = "/home/genniferk/prior_test/ic_gan/cc_icgan_biggan_imagenet_res256",
+        # required=True,
+        help="Path where pretrained models + instance features have been downloaded.",
+    )
+    parser.add_argument(
+        "--which_dataset",
+        type=str,
+        default="imagenet",
+        choices=["imagenet", "coco"],
+        help="Dataset to sample instances from.",
+    )
+    parser.add_argument(
+        "--trained_dataset",
+        type=str,
+        default="imagenet",
+        choices=["imagenet", "coco"],
+        help="Dataset in which the model has been trained on.",
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="cc_icgan",
+        choices=["icgan", "cc_icgan"],
+        help="Model type.",
+    )
+    parser.add_argument(
+        "--model_backbone",
+        type=str,
+        default="biggan",
+        choices=["biggan", "stylegan2"],
+        help="Model backbone type.",
+    )
+    parser.add_argument(
+        "--resolution",
+        type=int,
+        default=256,
+        help="Resolution to generate images with " "(default: %(default)s)",
+    )
+    parser.add_argument(
+        "--z_var", type=float, default=1.0, help="Noise variance: %(default)s)"
+    )
+    parser.add_argument("--batch_size", type=int, default=16, help="Batch size.")
+    parser.add_argument(
+        "--num_imgs_gen",
+        type=int,
+        default=1,
+        help="Number of images to generate with different noise vectors, "
+        "given an input conditioning.",
+    )
+    parser.add_argument(
+        "--num_conditionings_gen",
+        type=int,
+        default=1,
+        help="Number of conditionings to generate with."
+        " Use `num_imgs_gen` to control the number of generated samples per conditioning",
+    )
+    parser.add_argument(
+        "--index",
+        type=int,
+        default=400,
+        help="Index of the stored instance to use as conditioning [0,1000)."
+        " Mutually exclusive with `num_conditionings_gen!=1`",
+    )
+    parser.add_argument(
+        "--swap_target",
+        type=int,
+        default=156,
+        help="For class-conditional IC-GAN, we can choose to swap the target for a different one."
+        " If swap_target=None, the original label from the instance is used. "
+        "If swap_target is in [0,1000), a specific ImageNet class is used instead.",
+    )
+
+    parser.add_argument(
+        "--visualize_instance_images",
+        action="store_true",
+        default=False,
+        help="Also visualize the ground-truth image corresponding to the instance conditioning "
+        "(requires a path to the ImageNet dataset)",
+    )
+    parser.add_argument(
+        "--dataset_path",
+        type=str,
+        default="",
+        help="Only needed if visualize_instance_images=True."
+        " Folder where to find the dataset ground-truth images.",
+    )
+    parser.add_argument(
+        "--generator",
+        type=str,
+        default="icgan",
+        help="Dummy.",
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default=device,
+        help="Dummy.",
+    )
+
+    config = vars(parser.parse_args())
+    # config["device"] = device
+
+    if config["index"] is not None and config["num_conditionings_gen"] != 1:
+        raise ValueError(
+            "If a specific feature vector (specificed by --index) "
+            "wants to be used to sample images from, num_conditionings_gen"
+            " needs to be set to 1"
+        )
+    if config["swap_target"] is not None and config["model"] == "icgan":
+        raise ValueError(
+            'Cannot specify a class label for IC-GAN! Only use "swap_target" with --model=cc_igan. '
+        )
+    generator, z, all_feats, all_labels = main(config)
+    return generator, z, all_feats, all_labels
+
 
 
 if __name__ == "__main__":
@@ -290,28 +477,28 @@ if __name__ == "__main__":
     parser.add_argument(
         "--num_imgs_gen",
         type=int,
-        default=5,
+        default=1,
         help="Number of images to generate with different noise vectors, "
         "given an input conditioning.",
     )
     parser.add_argument(
         "--num_conditionings_gen",
         type=int,
-        default=5,
+        default=1,
         help="Number of conditionings to generate with."
         " Use `num_imgs_gen` to control the number of generated samples per conditioning",
     )
     parser.add_argument(
         "--index",
         type=int,
-        default=None,
+        default=400,
         help="Index of the stored instance to use as conditioning [0,1000)."
         " Mutually exclusive with `num_conditionings_gen!=1`",
     )
     parser.add_argument(
         "--swap_target",
         type=int,
-        default=None,
+        default=156,
         help="For class-conditional IC-GAN, we can choose to swap the target for a different one."
         " If swap_target=None, the original label from the instance is used. "
         "If swap_target is in [0,1000), a specific ImageNet class is used instead.",

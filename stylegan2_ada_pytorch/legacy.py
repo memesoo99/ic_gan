@@ -18,7 +18,8 @@ import numpy as np
 import torch
 import sys
 
-sys.path.insert(1, os.path.join(sys.path[0], "../stylegan2_ada_pytorch"))
+# sys.path.insert(1, os.path.join(sys.path[0], "../stylegan2_ada_pytorch"))
+sys.path.insert(1,"/home/genniferk/prior_test/ic_gan/stylegan2_ada_pytorch")
 import dnnlib
 from torch_utils import misc
 
