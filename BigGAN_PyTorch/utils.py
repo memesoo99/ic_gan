@@ -51,7 +51,7 @@ def prepare_parser():
     parser.add_argument(
         "--resolution",
         type=int,
-        default=64,
+        default=256,
         help="Resolution to train with " "(default: %(default)s)",
     )
     parser.add_argument(
